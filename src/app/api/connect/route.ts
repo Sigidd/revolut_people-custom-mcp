@@ -111,7 +111,8 @@ export async function POST(req: NextRequest) {
   if (session.state) redirect.searchParams.set("state", session.state);
 
   // Set long-lived cookie so future token renewals are silent
-  const response = NextResponse.redirect(redirect.toString());
+  // 302 converts POST → GET on redirect (browser follows as GET to Claude.ai callback)
+  const response = NextResponse.redirect(redirect.toString(), 302);
   response.cookies.set(USER_COOKIE, userId, {
     httpOnly: true,
     secure: true,
