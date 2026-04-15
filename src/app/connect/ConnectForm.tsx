@@ -15,18 +15,18 @@ export default function ConnectForm() {
       {errorMsg && <p style={styles.error}>{errorMsg}</p>}
 
       <label style={styles.label}>
-        Workspace URL
+        Workspace Name
         <input
           style={styles.input}
-          type="url"
+          type="text"
           name="workspace_url"
-          placeholder="https://revolutpeople.com/your-company/"
+          placeholder="istituto-formativo-aladia"
           required
           autoComplete="off"
           autoFocus
         />
         <span style={styles.fieldHint}>
-          The URL in your browser when logged into Revolut People
+          The slug in your Revolut People URL: revolutpeople.com/<strong>your-slug</strong>/
         </span>
       </label>
 
