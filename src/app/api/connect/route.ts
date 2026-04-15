@@ -130,5 +130,6 @@ function redirectWithError(
   const url = new URL(`${base}/connect`);
   if (sessionId) url.searchParams.set("session_id", sessionId);
   url.searchParams.set("error", message);
-  return NextResponse.redirect(url.toString());
+  // Use 303 See Other so browsers convert POST→GET on redirect
+  return NextResponse.redirect(url.toString(), 303);
 }

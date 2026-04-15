@@ -25,6 +25,7 @@ export async function loginWithSecretKey(
   secretKey: string
 ): Promise<{ authenticated: boolean; token: string; expiry_date_time: string; email: string; permissions: string[] }> {
   const loginUrl = buildApiUrl(workspaceUrl, "login/");
+  console.log("[Revolut People] Login URL:", loginUrl);
   const res = await fetch(loginUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -39,15 +40,17 @@ export async function loginWithSecretKey(
 
 // ─── URL helpers ───────────────────────────────────────────────────────────────
 
-/** Normalise workspace URL: always ends with a single slash */
+/** Revolut People API base URL (same for all workspaces) */
+const REVOLUT_PEOPLE_API = "https://revolutpeople.com/api/";
+
+/** Normalise workspace URL: always ends with a single slash (kept for userId derivation) */
 export function normaliseWorkspaceUrl(raw: string): string {
   return raw.trim().replace(/\/*$/, "/");
 }
 
-/** Build an API URL from a workspace URL + path segment */
-function buildApiUrl(workspaceUrl: string, path: string): string {
-  const base = normaliseWorkspaceUrl(workspaceUrl);
-  return `${base}api/${path}`;
+/** Build an API URL — workspace is NOT in the path; it's identified by the token */
+function buildApiUrl(_workspaceUrl: string, path: string): string {
+  return `${REVOLUT_PEOPLE_API}${path}`;
 }
 
 // ─── Client ────────────────────────────────────────────────────────────────────
