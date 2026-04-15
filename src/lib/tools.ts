@@ -12,9 +12,7 @@
  *   Specialisations:  list_specialisations, create_specialisation, update_specialisation
  *   Seniorities:      list_seniorities
  *   Recruitment:      list_candidates, create_candidate, list_application_forms,
- *                     list_interview_feedbacks, list_interview_schedulings,
- *                     list_job_postings, list_offer_forms, list_requisitions,
- *                     list_requisition_changelog
+ *                     list_requisitions
  *   Performance:      list_grades, list_performance_scorecards, list_probation_cycles,
  *                     list_probation_decisions, list_performance_timeline
  *   Time Off:         list_time_off_requests
@@ -594,14 +592,14 @@ export function registerTools(server: McpServer, client: RevolutPeopleClient) {
 
   server.tool(
     "list_application_forms",
-    "Get a list of all recruitment application forms",
+    "Get a list of all recruitment applications (application forms)",
     {
       page: optInt.describe("Page number"),
       page_size: optInt.describe("Results per page"),
       ordering: optStr.describe("Ordering field"),
       updated_date_time: optStr.describe("Filter by last updated datetime"),
       candidate__updated_date_time: optStr.describe(
-        "Filter by candidate updated datetime (comma-separated range)"
+        "Filter by candidate updated datetime"
       ),
       interview_round__updated_date_time: optStr.describe(
         "Filter by interview round updated datetime"
@@ -610,78 +608,6 @@ export function registerTools(server: McpServer, client: RevolutPeopleClient) {
     async (params) => {
       try {
         return ok(await client.listApplicationForms(params));
-      } catch (e) {
-        return err(e);
-      }
-    }
-  );
-
-  server.tool(
-    "list_interview_feedbacks",
-    "Get a list of all interview feedbacks",
-    {
-      page: optInt.describe("Page number"),
-      page_size: optInt.describe("Results per page"),
-      ordering: optStr.describe("Ordering field"),
-      updated_date_time: optStr.describe("Filter by last updated datetime"),
-    },
-    async (params) => {
-      try {
-        return ok(await client.listInterviewFeedbacks(params));
-      } catch (e) {
-        return err(e);
-      }
-    }
-  );
-
-  server.tool(
-    "list_interview_schedulings",
-    "Get a list of all interview schedulings",
-    {
-      page: optInt.describe("Page number"),
-      page_size: optInt.describe("Results per page"),
-      ordering: optStr.describe("Ordering field"),
-      updated_date_time: optStr.describe("Filter by last updated datetime"),
-    },
-    async (params) => {
-      try {
-        return ok(await client.listInterviewSchedulings(params));
-      } catch (e) {
-        return err(e);
-      }
-    }
-  );
-
-  server.tool(
-    "list_job_postings",
-    "Get a list of all job postings",
-    {
-      page: optInt.describe("Page number"),
-      page_size: optInt.describe("Results per page"),
-      ordering: optStr.describe("Ordering field"),
-      updated_date_time: optStr.describe("Filter by last updated datetime"),
-    },
-    async (params) => {
-      try {
-        return ok(await client.listJobPostings(params));
-      } catch (e) {
-        return err(e);
-      }
-    }
-  );
-
-  server.tool(
-    "list_offer_forms",
-    "Get a list of all offer forms",
-    {
-      page: optInt.describe("Page number"),
-      page_size: optInt.describe("Results per page"),
-      ordering: optStr.describe("Ordering field"),
-      updated_date_time: optStr.describe("Filter by last updated datetime"),
-    },
-    async (params) => {
-      try {
-        return ok(await client.listOfferForms(params));
       } catch (e) {
         return err(e);
       }
@@ -700,24 +626,6 @@ export function registerTools(server: McpServer, client: RevolutPeopleClient) {
     async (params) => {
       try {
         return ok(await client.listRequisitions(params));
-      } catch (e) {
-        return err(e);
-      }
-    }
-  );
-
-  server.tool(
-    "list_requisition_changelog",
-    "Get a detailed list of field-level changes for requisitions",
-    {
-      page: optInt.describe("Page number"),
-      page_size: optInt.describe("Results per page"),
-      ordering: optStr.describe("Ordering field"),
-      updated_date_time: optStr.describe("Filter by last updated datetime"),
-    },
-    async (params) => {
-      try {
-        return ok(await client.listRequisitionChangelog(params));
       } catch (e) {
         return err(e);
       }

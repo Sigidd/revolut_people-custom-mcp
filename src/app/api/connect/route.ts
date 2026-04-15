@@ -50,13 +50,14 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const workspaceUrl = normaliseWorkspaceUrl(rawWorkspaceUrl);
+  // normaliseWorkspaceUrl now returns just the slug (e.g. "istituto-formativo-aladia")
+  const workspaceSlug = normaliseWorkspaceUrl(rawWorkspaceUrl);
 
   // Validate credentials against Revolut People
   let revolutToken: string;
   let expiryDateTime: string;
   try {
-    const loginResp = await loginWithSecretKey(workspaceUrl, email, secretKey);
+    const loginResp = await loginWithSecretKey(workspaceSlug, email, secretKey);
     if (!loginResp.authenticated || !loginResp.token) {
       throw new Error("Authentication failed — check your credentials.");
     }
@@ -73,7 +74,7 @@ export async function POST(req: NextRequest) {
 
   // Derive a stable userId from workspace + email
   const userId = createHash("sha256")
-    .update(`${workspaceUrl}:${email}`)
+    .update(`${workspaceSlug}:${email}`)
     .digest("hex")
     .slice(0, 32);
 
@@ -83,7 +84,7 @@ export async function POST(req: NextRequest) {
     : Date.now() + 5 * 24 * 60 * 60 * 1000; // fallback: 5 days
 
   await store.setCredentials(userId, {
-    workspaceUrl,
+    workspaceUrl: workspaceSlug,
     email,
     revolutToken,
     tokenExpiresAt,

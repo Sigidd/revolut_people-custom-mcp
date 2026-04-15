@@ -26,7 +26,7 @@ export default function ConnectForm() {
           autoFocus
         />
         <span style={styles.fieldHint}>
-          The slug in your Revolut People URL: revolutpeople.com/<strong>your-slug</strong>/
+          The slug in your Revolut People URL: revolutpeople.com/<strong>your-slug</strong>/ — enter only the slug (e.g. <code>istituto-formativo-aladia</code>)
         </span>
       </label>
 

@@ -7,7 +7,8 @@
  *   email + secret_key before expiry.
  *
  * Base URL pattern:
- *   {workspaceUrl}api/  →  e.g. https://revolutpeople.com/acme/api/
+ *   https://revolutpeople.com/api/<workspace_slug>/external/services/v1/<endpoint>
+ *   e.g. https://revolutpeople.com/api/acme/external/services/v1/employees/
  *
  * Rate limit: 60 req/min → 429 Too Many Requests
  */
@@ -18,17 +19,19 @@ import { store, UserCredentials } from "./store";
 /**
  * Exchange email + secret_key for a Revolut People API token.
  * Returns { token, expiry_date_time, email, permissions }.
+ *
+ * Login URL: POST https://revolutpeople.com/api/<workspace_slug>/external/services/v1/login
  */
 export async function loginWithSecretKey(
-  workspaceUrl: string,
+  workspaceSlug: string,
   email: string,
   secretKey: string
 ): Promise<{ authenticated: boolean; token: string; expiry_date_time: string; email: string; permissions: string[] }> {
-  const loginUrl = buildApiUrl(workspaceUrl, "login/");
+  const loginUrl = buildApiUrl(workspaceSlug, "login");
   console.log("[Revolut People] Login URL:", loginUrl);
   const res = await fetch(loginUrl, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "Accept": "application/json" },
     body: JSON.stringify({ email, token: secretKey }),
   });
   if (!res.ok) {
@@ -40,17 +43,25 @@ export async function loginWithSecretKey(
 
 // ─── URL helpers ───────────────────────────────────────────────────────────────
 
-/** Revolut People API base URL (same for all workspaces) */
-const REVOLUT_PEOPLE_API = "https://revolutpeople.com/api/";
+/** Revolut People API base URL pattern */
+const REVOLUT_PEOPLE_API_BASE = "https://revolutpeople.com/api/";
 
-/** Normalise workspace URL: always ends with a single slash (kept for userId derivation) */
+/**
+ * Extract workspace slug from a full URL or plain slug.
+ * Accepts: "istituto-formativo-aladia", "https://revolutpeople.com/istituto-formativo-aladia/", etc.
+ */
 export function normaliseWorkspaceUrl(raw: string): string {
-  return raw.trim().replace(/\/*$/, "/");
+  const trimmed = raw.trim().replace(/\/*$/, "");
+  // If it's a full URL, extract the slug
+  const match = trimmed.match(/revolutpeople\.com\/([^/?#]+)/);
+  if (match) return match[1];
+  // Otherwise treat the whole thing as a slug
+  return trimmed;
 }
 
-/** Build an API URL — workspace is NOT in the path; it's identified by the token */
-function buildApiUrl(_workspaceUrl: string, path: string): string {
-  return `${REVOLUT_PEOPLE_API}${path}`;
+/** Build an API URL using the workspace slug */
+function buildApiUrl(workspaceSlug: string, path: string): string {
+  return `${REVOLUT_PEOPLE_API_BASE}${workspaceSlug}/external/services/v1/${path}`;
 }
 
 // ─── Client ────────────────────────────────────────────────────────────────────
@@ -60,22 +71,19 @@ export class RevolutPeopleClient {
 
   // ── Token management ─────────────────────────────────────────────────────────
 
-  private async getToken(): Promise<{ token: string; workspaceUrl: string }> {
+  private async getToken(): Promise<{ token: string; workspaceSlug: string }> {
     const creds = await store.getCredentials(this.userId);
     if (!creds) throw new Error("No credentials found. Please reconnect.");
 
     // Refresh if token expires within 1 hour
     const ONE_HOUR = 60 * 60 * 1000;
     if (creds.tokenExpiresAt - ONE_HOUR < Date.now()) {
-      // Re-login with stored email + secretKey
-      // secretKey is stored in revolutToken field during initial setup
-      // We need to re-login; store email + secretKey separately
       throw new Error(
         "Revolut People token has expired. Please reconnect via the /connect flow."
       );
     }
 
-    return { token: creds.revolutToken, workspaceUrl: creds.workspaceUrl };
+    return { token: creds.revolutToken, workspaceSlug: creds.workspaceUrl };
   }
 
   // ── Core request method ──────────────────────────────────────────────────────
@@ -86,9 +94,9 @@ export class RevolutPeopleClient {
     params?: Record<string, string | number | undefined>,
     body?: unknown
   ): Promise<T> {
-    const { token, workspaceUrl } = await this.getToken();
+    const { token, workspaceSlug } = await this.getToken();
 
-    let url = buildApiUrl(workspaceUrl, path);
+    let url = buildApiUrl(workspaceSlug, path);
 
     // Append query params
     if (params) {
@@ -141,11 +149,11 @@ export class RevolutPeopleClient {
     creation_date_time?: string;
     updated_date_time?: string;
   }) {
-    return this.request("GET", "employees/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "employees", params as Record<string, string | number | undefined>);
   }
 
   async getEmployee(id: number) {
-    return this.request("GET", `employees/${id}/`);
+    return this.request("GET", `employees/${id}`);
   }
 
   async createEmployee(data: {
@@ -162,7 +170,7 @@ export class RevolutPeopleClient {
     status?: { id: string };
     termination_date_time?: string;
   }) {
-    return this.request("POST", "employees/", undefined, data);
+    return this.request("POST", "employees", undefined, data);
   }
 
   async updateEmployee(
@@ -182,7 +190,7 @@ export class RevolutPeopleClient {
       termination_date_time?: string;
     }
   ) {
-    return this.request("PUT", `employees/${id}/`, undefined, data);
+    return this.request("PUT", `employees/${id}`, undefined, data);
   }
 
   async listEmployeeChangelog(params?: {
@@ -194,18 +202,24 @@ export class RevolutPeopleClient {
     page_size?: number;
     ordering?: string;
   }) {
-    return this.request("GET", "employees/changelog/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "employees/changelog", params as Record<string, string | number | undefined>);
   }
 
   async listEmployeeCompensation(employeeId: number, params?: {
     page?: number;
     page_size?: number;
   }) {
-    return this.request("GET", `employees/${employeeId}/work-and-compensation/`, params as Record<string, string | number | undefined>);
+    // Flat endpoint — filter by employee_id query param
+    return this.request("GET", "employees/work-and-compensation", {
+      ...(params ?? {}),
+      employee_id: employeeId,
+    } as Record<string, string | number | undefined>);
   }
 
   async getEmployeeCompensation(employeeId: number, compensationId: number) {
-    return this.request("GET", `employees/${employeeId}/work-and-compensation/${compensationId}/`);
+    return this.request("GET", `employees/work-and-compensation/${compensationId}`, {
+      employee_id: employeeId,
+    } as Record<string, string | number | undefined>);
   }
 
   async updateEmployeeCompensation(
@@ -213,7 +227,7 @@ export class RevolutPeopleClient {
     compensationId: number,
     data: Record<string, unknown>
   ) {
-    return this.request("PUT", `employees/${employeeId}/work-and-compensation/${compensationId}/`, undefined, data);
+    return this.request("PUT", `employees/work-and-compensation/${compensationId}`, undefined, data);
   }
 
   async partialUpdateEmployeeCompensation(
@@ -221,7 +235,7 @@ export class RevolutPeopleClient {
     compensationId: number,
     data: Record<string, unknown>
   ) {
-    return this.request("PATCH", `employees/${employeeId}/work-and-compensation/${compensationId}/`, undefined, data);
+    return this.request("PATCH", `employees/work-and-compensation/${compensationId}`, undefined, data);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -237,7 +251,7 @@ export class RevolutPeopleClient {
     ordering?: string;
     updated_date_time?: string;
   }) {
-    return this.request("GET", "departments/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "departments", params as Record<string, string | number | undefined>);
   }
 
   async createDepartment(data: {
@@ -245,7 +259,7 @@ export class RevolutPeopleClient {
     owner?: { id: number };
     mission?: string;
   }) {
-    return this.request("POST", "departments/", undefined, data);
+    return this.request("POST", "departments", undefined, data);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -258,7 +272,7 @@ export class RevolutPeopleClient {
     ordering?: string;
     updated_date_time?: string;
   }) {
-    return this.request("GET", "teams/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "teams", params as Record<string, string | number | undefined>);
   }
 
   async createTeam(data: {
@@ -266,7 +280,7 @@ export class RevolutPeopleClient {
     department?: { id: number };
     team_lead?: { id: number };
   }) {
-    return this.request("POST", "teams/", undefined, data);
+    return this.request("POST", "teams", undefined, data);
   }
 
   async updateTeam(
@@ -277,7 +291,7 @@ export class RevolutPeopleClient {
       team_lead?: { id: number };
     }
   ) {
-    return this.request("PUT", `teams/${id}/`, undefined, data);
+    return this.request("PUT", `teams/${id}`, undefined, data);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -289,14 +303,26 @@ export class RevolutPeopleClient {
     page_size?: number;
     ordering?: string;
   }) {
-    return this.request("GET", "roles/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "roles", params as Record<string, string | number | undefined>);
   }
 
   async createRole(data: {
     name: string;
     department?: { id: number };
   }) {
-    return this.request("POST", "roles/", undefined, data);
+    return this.request("POST", "roles", undefined, data);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FUNCTIONS (alias: roles in some contexts)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  async listFunctions(params?: {
+    page?: number;
+    page_size?: number;
+    ordering?: string;
+  }) {
+    return this.request("GET", "functions", params as Record<string, string | number | undefined>);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -308,18 +334,18 @@ export class RevolutPeopleClient {
     page_size?: number;
     ordering?: string;
   }) {
-    return this.request("GET", "specialisations/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "specialisations", params as Record<string, string | number | undefined>);
   }
 
   async createSpecialisation(data: { name: string; role?: { id: number } }) {
-    return this.request("POST", "specialisations/", undefined, data);
+    return this.request("POST", "specialisations", undefined, data);
   }
 
   async updateSpecialisation(
     id: number,
     data: { name: string; role?: { id: number } }
   ) {
-    return this.request("PUT", `specialisations/${id}/`, undefined, data);
+    return this.request("PUT", `specialisations/${id}`, undefined, data);
   }
 
   async listSeniorities(params?: {
@@ -327,7 +353,7 @@ export class RevolutPeopleClient {
     page_size?: number;
     ordering?: string;
   }) {
-    return this.request("GET", "seniorities/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "seniorities", params as Record<string, string | number | undefined>);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -340,7 +366,7 @@ export class RevolutPeopleClient {
     ordering?: string;
     updated_date_time?: string;
   }) {
-    return this.request("GET", "candidates/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "recruitment/candidates", params as Record<string, string | number | undefined>);
   }
 
   async createCandidate(data: {
@@ -351,7 +377,7 @@ export class RevolutPeopleClient {
     country?: { id: number };
     years_of_experience?: number;
   }) {
-    return this.request("POST", "candidates/", undefined, data);
+    return this.request("POST", "recruitment/candidates", undefined, data);
   }
 
   async listApplicationForms(params?: {
@@ -362,43 +388,7 @@ export class RevolutPeopleClient {
     candidate__updated_date_time?: string;
     interview_round__updated_date_time?: string;
   }) {
-    return this.request("GET", "application-forms/", params as Record<string, string | number | undefined>);
-  }
-
-  async listInterviewFeedbacks(params?: {
-    page?: number;
-    page_size?: number;
-    ordering?: string;
-    updated_date_time?: string;
-  }) {
-    return this.request("GET", "interview-feedbacks/", params as Record<string, string | number | undefined>);
-  }
-
-  async listInterviewSchedulings(params?: {
-    page?: number;
-    page_size?: number;
-    ordering?: string;
-    updated_date_time?: string;
-  }) {
-    return this.request("GET", "interview-schedulings/", params as Record<string, string | number | undefined>);
-  }
-
-  async listJobPostings(params?: {
-    page?: number;
-    page_size?: number;
-    ordering?: string;
-    updated_date_time?: string;
-  }) {
-    return this.request("GET", "job-postings/", params as Record<string, string | number | undefined>);
-  }
-
-  async listOfferForms(params?: {
-    page?: number;
-    page_size?: number;
-    ordering?: string;
-    updated_date_time?: string;
-  }) {
-    return this.request("GET", "offer-forms/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "recruitment/applications", params as Record<string, string | number | undefined>);
   }
 
   async listRequisitions(params?: {
@@ -407,16 +397,7 @@ export class RevolutPeopleClient {
     ordering?: string;
     updated_date_time?: string;
   }) {
-    return this.request("GET", "requisitions/", params as Record<string, string | number | undefined>);
-  }
-
-  async listRequisitionChangelog(params?: {
-    page?: number;
-    page_size?: number;
-    ordering?: string;
-    updated_date_time?: string;
-  }) {
-    return this.request("GET", "requisition-changelog/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "recruitment/requisitions", params as Record<string, string | number | undefined>);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -428,7 +409,7 @@ export class RevolutPeopleClient {
     page_size?: number;
     ordering?: string;
   }) {
-    return this.request("GET", "grades/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "employees/grades", params as Record<string, string | number | undefined>);
   }
 
   async listPerformanceScorecards(params?: {
@@ -437,7 +418,7 @@ export class RevolutPeopleClient {
     ordering?: string;
     updated_date_time?: string;
   }) {
-    return this.request("GET", "performance-scorecards/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "employees/performance-scorecards", params as Record<string, string | number | undefined>);
   }
 
   async listProbationCycles(params?: {
@@ -445,7 +426,7 @@ export class RevolutPeopleClient {
     page_size?: number;
     ordering?: string;
   }) {
-    return this.request("GET", "probation-cycles/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "employees/probation-cycles", params as Record<string, string | number | undefined>);
   }
 
   async listProbationDecisions(params?: {
@@ -453,7 +434,7 @@ export class RevolutPeopleClient {
     page_size?: number;
     ordering?: string;
   }) {
-    return this.request("GET", "probation-decisions/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "employees/probation-decisions", params as Record<string, string | number | undefined>);
   }
 
   async listPerformanceTimeline(params?: {
@@ -462,7 +443,7 @@ export class RevolutPeopleClient {
     ordering?: string;
     updated_date_time?: string;
   }) {
-    return this.request("GET", "performance-timeline/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "employees/performance-timeline", params as Record<string, string | number | undefined>);
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -485,6 +466,6 @@ export class RevolutPeopleClient {
     page_size?: number;
     ordering?: string;
   }) {
-    return this.request("GET", "time-off-requests/", params as Record<string, string | number | undefined>);
+    return this.request("GET", "employees/time-off-requests", params as Record<string, string | number | undefined>);
   }
 }
