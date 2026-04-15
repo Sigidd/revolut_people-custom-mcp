@@ -23,7 +23,7 @@ export async function loginWithSecretKey(
   workspaceUrl: string,
   email: string,
   secretKey: string
-): Promise<{ token: string; expiry_date_time: string; email: string; permissions: string[] }> {
+): Promise<{ authenticated: boolean; token: string; expiry_date_time: string; email: string; permissions: string[] }> {
   const loginUrl = buildApiUrl(workspaceUrl, "login/");
   const res = await fetch(loginUrl, {
     method: "POST",
